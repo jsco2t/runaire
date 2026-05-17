@@ -1,0 +1,110 @@
+# Runaire CI.
+#
+# Build, lint, test, docs, supply-chain checks, and KeePassXC interop all run
+# through the top-level Makefile so local and CI workflows stay aligned.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  vault-core:
+    name: vault-core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - name: Install KeePassXC CLI (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y keepassxc
+
+      - name: Install KeePassXC CLI (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install --cask keepassxc
+          if ! command -v keepassxc-cli >/dev/null 2>&1; then
+            sudo ln -s /Applications/KeePassXC.app/Contents/MacOS/keepassxc-cli /usr/local/bin/keepassxc-cli
+          fi
+
+      - name: Check KeePassXC CLI
+        run: keepassxc-cli --version
+
+      - name: Install cargo-deny
+        working-directory: /tmp
+        env:
+          CARGO_NET_OFFLINE: "false"
+          RUSTUP_TOOLCHAIN: "1.95.0"
+        run: cargo install --locked cargo-deny --version 0.19.6
+
+      - name: Install cargo-audit
+        working-directory: /tmp
+        env:
+          CARGO_NET_OFFLINE: "false"
+          RUSTUP_TOOLCHAIN: "1.95.0"
+        run: cargo install --locked cargo-audit --version 0.22.1
+
+      - name: Format check
+        run: make fmt-check
+
+      - name: Lint
+        run: make lint
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+      - name: Ignored tests
+        run: make test-ignored
+
+      - name: API docs
+        run: make doc
+
+      - name: Supply-chain policy check
+        run: make deny
+
+      - name: RustSec advisory check
+        run: make audit
+
+      - name: KeePassXC interop (vault-core)
+        run: make interop
+
+      - name: Install oathtool (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y oathtool
+
+      - name: Install oathtool (macOS)
+        if: runner.os == 'macOS'
+        run: brew install oath-toolkit
+
+      - name: KeePassXC interop (entry-management)
+        run: make interop-entry
+
+      - name: NFR-002 search benchmark gate
+        env:
+          # Cloud runners are noisier than dev hardware; allow 50% headroom
+          # over the 50ms PRD budget. Local `make bench-search-gate` runs
+          # at the tight 50ms budget by default.
+          BUDGET_MS: "75"
+        run: make bench-search-gate
+
+      - name: Informational benchmark
+        continue-on-error: true
+        run: make bench
