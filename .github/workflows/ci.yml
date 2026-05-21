@@ -68,6 +68,9 @@ jobs:
       - name: Build
         run: make build
 
+      - name: Shell completions drift gate
+        run: make completions-check
+
       - name: Test
         run: make test
 

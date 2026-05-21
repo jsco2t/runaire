@@ -1,5 +1,3 @@
-use crate::InternalString;
-
 /// Opaque string storage for raw TOML; internal to `toml_edit`
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub struct RawString(RawStringInner);
@@ -7,13 +5,13 @@ pub struct RawString(RawStringInner);
 #[derive(PartialEq, Eq, Clone, Hash)]
 enum RawStringInner {
     Empty,
-    Explicit(InternalString),
+    Explicit(String),
     Spanned(std::ops::Range<usize>),
 }
 
 impl RawString {
     pub(crate) fn with_span(span: std::ops::Range<usize>) -> Self {
-        RawString(RawStringInner::Spanned(span))
+        Self(RawStringInner::Spanned(span))
     }
 
     /// Access the underlying string
@@ -29,7 +27,7 @@ impl RawString {
 
     /// The location within the original document
     ///
-    /// This generally requires an [`ImDocument`][crate::ImDocument].
+    /// This generally requires a [`Document`][crate::Document].
     pub fn span(&self) -> Option<std::ops::Range<usize>> {
         match &self.0 {
             RawStringInner::Empty => None,
@@ -74,7 +72,7 @@ impl RawString {
             RawStringInner::Explicit(_) => {}
             RawStringInner::Spanned(span) => {
                 if span.start == span.end {
-                    *self = RawString(RawStringInner::Empty);
+                    *self = Self(RawStringInner::Empty);
                 } else {
                     *self = Self::from(input.get(span.clone()).unwrap_or_else(|| {
                         panic!("span {span:?} should be in input:\n```\n{input}\n```")
@@ -131,7 +129,7 @@ impl From<&str> for RawString {
         if s.is_empty() {
             Self(RawStringInner::Empty)
         } else {
-            InternalString::from(s).into()
+            String::from(s).into()
         }
     }
 }
@@ -142,7 +140,7 @@ impl From<String> for RawString {
         if s.is_empty() {
             Self(RawStringInner::Empty)
         } else {
-            InternalString::from(s).into()
+            Self(RawStringInner::Explicit(s))
         }
     }
 }
@@ -153,25 +151,7 @@ impl From<&String> for RawString {
         if s.is_empty() {
             Self(RawStringInner::Empty)
         } else {
-            InternalString::from(s).into()
-        }
-    }
-}
-
-impl From<InternalString> for RawString {
-    #[inline]
-    fn from(inner: InternalString) -> Self {
-        Self(RawStringInner::Explicit(inner))
-    }
-}
-
-impl From<&InternalString> for RawString {
-    #[inline]
-    fn from(s: &InternalString) -> Self {
-        if s.is_empty() {
-            Self(RawStringInner::Empty)
-        } else {
-            InternalString::from(s).into()
+            String::from(s).into()
         }
     }
 }
@@ -182,7 +162,7 @@ impl From<Box<str>> for RawString {
         if s.is_empty() {
             Self(RawStringInner::Empty)
         } else {
-            InternalString::from(s).into()
+            String::from(s).into()
         }
     }
 }

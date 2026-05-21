@@ -1,5 +1,13 @@
 # Rùnaire
 
+```
+    ____   \                _
+   / __ \__  ______  ____ _(_)_______
+  / /_/ / / / / __ \/ __ `/ / ___/ _ \
+ / _, _/ /_/ / / / / /_/ / / /  /  __/
+/_/ |_|\__,_/_/ /_/\__,_/_/_/   \___/
+```
+
 Rùnaire (Scottish Gaelic: _"keeper of secrets"_) is an offline-first secrets
 manager built on a Rust core with thin cross-platform UIs. Vaults are stored in
 the [KDBX (KeePass) format](https://keepass.info/help/kb/kdbx_4.html) via the
