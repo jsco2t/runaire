@@ -1,3 +1,5 @@
-fn main() {
-    println!("runaire-cli stub — implemented by the cli-skeleton feature");
+//! `runaire` binary — thin shim over [`runaire_cli::run`].
+
+fn main() -> std::process::ExitCode {
+    runaire_cli::run()
 }

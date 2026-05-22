@@ -220,6 +220,220 @@ candidate for `unsafe` — is deferred (design §3.9).
 
 ---
 
+## Security-behaviours testing conventions
+
+The `runaire-security` crate carries two test-invocation conventions
+that are not obvious from the `cargo test` defaults.
+
+### Signal-handler test serialization (`SignalGuard`)
+
+Tests that install a `signal-hook::iterator::Signals`, call
+`signal::raise(...)`, send signals to spawned children, or otherwise
+touch process-global signal disposition **must** acquire a shared
+`Mutex<()>` at the top of their body. The shared lock lives at
+`crates/runaire-security/tests/common/signals.rs` (`SIGNAL_GUARD`) and
+its module docstring documents the contract.
+
+The lock prevents two parallel `cargo test` workers in the same test
+binary from racing each other inside the kernel's process-global
+signal state. Tests that do NOT touch signal disposition do not need
+the guard. The pattern mirrors `runaire-core`'s `EnvGuard` for `HOME`.
+
+Phase 1 of the `security-behaviors` feature lands the guard; Phase 4
+is the first phase whose tests consume it. The early landing is
+intentional — adding the helper alongside its first consumer would be
+a churn-y forwarding PR.
+
+### Clipboard / OS-events test invocation (`make test-clipboard`, `make test-os-events`)
+
+`runaire-security`'s clipboard tests need a real display server (X11,
+Wayland, or macOS Pasteboard) so they're `#[ignore]`d by default.
+
+- `make test-clipboard` runs the `#[ignore]`d clipboard tests serially
+  (`--test-threads=1`). On Linux CI, wrap the invocation in
+  `xvfb-run -a make test-clipboard` so an X11-headed display is
+  available. The matching test filter is `us_053_clipboard`.
+- `make test-os-events` is a post-MVP placeholder. In MVP it runs zero
+  tests (no matching test names exist); when `LogindSource` (Linux DBus)
+  and `IoKitSource` (macOS) land in Phase 5 they will add tests under
+  the `us_052_post_mvp` filter.
+
+Both targets are wrappers over `cargo test`; the actual `#[ignore]`
+filtering happens in code. The Makefile targets exist primarily for
+discoverability via `make help` and for CI workflow parity.
+
+---
+
+## CLI conventions
+
+The `runaire-cli` crate is the reference scriptable surface (PRD §6.7,
+FR-060..064). Its public behaviour is treated as a stable contract —
+adding subcommands and JSON fields is additive; renames or removals are
+breaking.
+
+### No `--master-password` flag
+
+There is no `--master-password` (or `--password`) flag anywhere in the
+CLI, on any subcommand. The master password is collected *only* via the
+no-echo secure stdin prompt (`rpassword`). A unit test in
+`crates/runaire-cli/src/cli.rs` walks the entire clap command tree at
+build time and fails the build if any flag with this name appears.
+
+Rationale: command-line flags are visible to anyone on the same host
+via `ps`, are recorded in shell history, and end up in `~/.bash_history`
+on disk.
+
+### `RUNAIRE_MASTER_PASSWORD` is reserved and ignored
+
+If the environment variable `RUNAIRE_MASTER_PASSWORD` is set when
+`runaire` starts, the CLI:
+
+1. writes a warning to stderr (without echoing the value), and
+2. calls `std::env::remove_var` to scrub it from the process
+   environment before any subcommand runs.
+
+This is defence-in-depth against `runaire foo` being invoked from a
+parent shell that already has the variable exported — even by mistake.
+The scrub ensures no subprocess the CLI spawns can inherit the bypass
+attempt.
+
+### Secret-emission discipline
+
+Default output never includes secret material. Subcommands that surface
+secrets (`entry get`, `gen password`, `gen passphrase`) require an
+explicit flag (`--show-password`, `--show-totp`, `--show`) before the
+secret is rendered. This applies to both human and JSON output.
+
+`--copy` is the preferred path: it hands the value to the
+security-behaviors clipboard with an auto-clear timer and blocks
+on the timer's expiry before the CLI exits.
+
+### JSON schemas are a public contract
+
+Per-subcommand `serde::Serialize` view structs live in
+`crates/runaire-cli/src/views/`. Each is the JSON schema for its
+subcommand. Evolution rules:
+
+- New optional fields are additive — use
+  `#[serde(skip_serializing_if = "Option::is_none")]` so older
+  consumers see no diff.
+- Field renames and type changes are breaking — they require a major
+  version bump.
+- Errors in `--format json` mode go to **stdout** as
+  `{"error":{"code":N,"kind":"...","message":"..."}}` so a single
+  `runaire ... --format json | jq` pipeline sees JSON regardless of
+  exit status. Human-mode errors continue to go to stderr.
+
+### Exit-code stability promise
+
+The documented `CliExit` table (`crates/runaire-cli/src/exit.rs`) is
+frozen at MVP merge. Adding a new exit code is non-breaking; reusing
+or reassigning an existing code is breaking.
+
+The codes:
+
+| Code | Meaning                                              |
+| ---- | ---------------------------------------------------- |
+| 0    | Success                                              |
+| 1    | User error (bad flag, missing vault, parse failure)  |
+| 2    | Vault locked / authentication failed / contended     |
+| 3    | Sync conflict requiring user action (sync-git only)  |
+| 10   | Internal / unexpected failure                        |
+| 11   | Known unimplemented surface (slot subcommands)       |
+
+Exhaustive `From<XxxError> for CliExit` impls cover every
+consumed-library error variant. Adding a new variant in
+`runaire-core`'s `VaultError` (or any sibling crate's error enum)
+fails the build until the new variant is mapped — the design contract.
+
+### CLI dependency policy
+
+The CLI's dep tree is intentionally minimal:
+
+- **Integration tests** use `std::process::Command` with
+  `env!("CARGO_BIN_EXE_runaire")` directly rather than pulling in
+  `assert_cmd` + `predicates` (which would add roughly fifteen
+  transitive crates for no functional gain).
+- **`clap`'s non-essential features** (`wrap_help`, `color`) are
+  disabled at the manifest to avoid `anstream` / `terminal_size` /
+  `colorchoice` and their transitives.
+- **The secure no-echo prompt** uses `nix::sys::termios` directly
+  (Unix-only, ~2 MB vendored) rather than `rpassword`. `rpassword`'s
+  `cfg(windows)` branch pulls the `windows-sys` family plus seven
+  architecture-stub crates — roughly 93 MB of vendored sources that
+  would never compile on the project's supported macOS + Linux
+  targets. The replacement helper is ~80 LoC in
+  `crates/runaire-cli/src/prompt.rs` (`read_password_no_echo` plus
+  an `EchoGuard` RAII wrapper); the unsafe stays inside `nix`, so
+  the crate keeps `#![cfg_attr(not(test), forbid(unsafe_code))]`.
+
+New direct deps still go through the five-step "Adding a dependency"
+workflow above.
+
+### Subcommand surface
+
+The complete `runaire` subcommand tree as of MVP (FR-060). Subcommands
+marked _slot_ parse their flags but return exit 11
+(`not.implemented`); the flag surface is the forward-compat contract
+with the implementing feature, which fills in only the body.
+
+| Subcommand                | Purpose                                                                 | Status                       |
+| ------------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `runaire vault create`    | Create + register a new KDBX vault. Prompts for the master password.    | Implemented                  |
+| `runaire vault open`      | Probe vault unlock (MVP one-shot; agent caches in post-MVP).            | Implemented                  |
+| `runaire vault list`      | List registered vaults from `vaults.toml`.                              | Implemented                  |
+| `runaire vault set-lock`  | Configure or clear the per-vault idle-lock timeout.                     | Implemented                  |
+| `runaire vault set-sync`  | Configure the sync transport for a vault.                               | Slot → `features/sync-git/`  |
+| `runaire entry add`       | Add a new entry. `--password-stdin` or `--generate` is required.        | Implemented                  |
+| `runaire entry get`       | Read an entry by UUID or title. `--copy` hands to the clipboard.        | Implemented                  |
+| `runaire entry edit`      | Update entry fields and tags.                                            | Implemented                  |
+| `runaire entry rm`        | Remove an entry (recycle bin by default; `--permanent` skips it).        | Implemented                  |
+| `runaire entry list`      | List entries with optional tag / expiry filters + pagination.            | Implemented                  |
+| `runaire entry search`    | Full-text search over titles, usernames, URLs, notes.                    | Implemented                  |
+| `runaire gen password`    | Generate a random password. `--copy` hands to the clipboard.             | Implemented                  |
+| `runaire gen passphrase`  | Generate an EFF-large-wordlist diceware passphrase. `--copy` supported.  | Implemented                  |
+| `runaire sync`            | Synchronise a vault against its configured transport.                    | Slot → `features/sync-git/`  |
+| `runaire ssh add`         | Import an SSH key into a vault.                                          | Slot → `features/ssh-keys/`  |
+| `runaire ssh load`        | Load an SSH key from a vault into the running `ssh-agent`.               | Slot → `features/ssh-keys/`  |
+| `runaire ssh generate`    | Generate a new SSH keypair and store it in a vault.                      | Slot → `features/ssh-keys/`  |
+| `runaire completions`     | Emit a shell completion script (`bash`, `zsh`, `fish`).                  | Implemented                  |
+
+`vault create` / `vault open` and every `entry` verb prompt for the
+master password via the secure stdin path; `gen password` and
+`gen passphrase` never touch the vault and never prompt.
+
+### Shell completions
+
+The CLI ships pre-generated completion scripts for `bash`, `zsh`, and
+`fish` at the workspace root under
+`shell-completions/{runaire.bash,_runaire,runaire.fish}`. They are
+generated by `make completions`, which invokes
+`crates/runaire-cli/examples/gen_completions.rs` over the same
+`clap_complete` code path that `runaire completions <shell>` uses at
+runtime — runtime and packaged outputs cannot drift.
+
+CI runs `make completions-check` (a wrapper that calls
+`make completions` and then checks `git status --porcelain --
+shell-completions/`) as a drift gate. Any contributor who adds a
+subcommand or a flag without re-running the target fails the build.
+
+If `make completions-check` fails locally:
+
+```sh
+make completions             # regenerate the three scripts
+git add shell-completions/   # stage the updated outputs
+```
+
+Packaging (Phase 1+) will install the three files to system-standard
+locations (`/usr/share/bash-completion/completions/runaire`, etc.);
+until then users source the files directly from a clone, e.g.:
+
+```sh
+source shell-completions/runaire.bash
+```
+
+---
+
 ## Style
 
 - `make fmt-check` is enforced by CI (wraps `cargo fmt --all --check`).

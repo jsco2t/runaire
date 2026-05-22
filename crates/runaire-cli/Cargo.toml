@@ -1,6 +1,6 @@
 [package]
 name = "runaire-cli"
-description = "Rùnaire one-shot CLI (placeholder; implemented by the cli-skeleton feature)."
+description = "Rùnaire one-shot CLI — scriptable surface over runaire-core, runaire-genpw."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,4 +11,66 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+# Single-binary crate: `runaire`. `lib.rs` exposes the dispatcher entry
+# point so integration tests (which compile as separate binaries) can
+# exercise modules without going through the binary.
+[[bin]]
+name = "runaire"
+path = "src/main.rs"
+
+[lib]
+name = "runaire_cli"
+path = "src/lib.rs"
+
 [dependencies]
+# CLI parsing. `clap` is the project-standard parser (see CLAUDE.md
+# "Key libraries"). `derive` enables the struct/enum-based subcommand
+# tree; `wrap_help` is intentionally disabled to avoid the `terminal_size`
+# transitive (and the cfg-windows code paths Phase 0 doesn't ship to).
+clap = { version = "4.5", features = ["derive", "std", "help", "usage", "error-context", "suggestions"], default-features = false }
+
+# Shell-completion script generation for FR-064. Tracks clap's major.
+clap_complete = { version = "4.5", default-features = false }
+
+# Secure no-echo master-password prompt for FR-061. We use `nix` (a
+# safe Unix-only wrapper around `libc`) directly for the termios echo
+# toggle instead of `rpassword`. Rationale: `rpassword` pulls in
+# `rtoolbox` + the entire `windows-sys` family (`windows-targets`, both
+# 0.59 and 0.61 of `windows-sys`, plus 7 architecture-stub crates) via
+# its `cfg(windows)` branch — roughly 93 MB of vendored sources that
+# are never compiled on the project's supported targets (macOS +
+# Linux). `nix` ships only Unix bindings and keeps the workspace's
+# `forbid(unsafe_code)` posture intact (the unsafe lives inside `nix`).
+nix = { version = "0.30", default-features = false, features = ["term"] }
+
+# JSON output for FR-062. Already in the vendored tree (transitive of
+# `keepass`); promoted here as a direct dep so the dependency surface
+# is explicit.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Sibling library crates this CLI dispatches into. The explicit
+# `version = "0.1"` keeps `cargo deny`'s wildcard-dep gate happy
+# (it treats bare `path = "..."` as a wildcard); the workspace
+# version pin still applies in practice.
+runaire-core = { path = "../runaire-core", version = "0.1" }
+runaire-genpw = { path = "../runaire-genpw", version = "0.1" }
+# Phase 3 — clipboard hand-off for `entry get --copy` / `gen --copy`
+# (FR-053). Consumes `Clipboard::copy_with_autoclear` +
+# `AutoClearGuard::wait_for_clear` — see design §2.5 + §3.9.
+runaire-security = { path = "../runaire-security", version = "0.1" }
+
+# Misc — all already in the workspace tree.
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+thiserror = "2.0"
+toml = "0.8"
+uuid = { version = "1", features = ["serde", "v4"] }
+zeroize = { version = "1.8", features = ["derive"] }
+
+[dev-dependencies]
+# Integration tests use `std::process::Command` + `env!("CARGO_BIN_EXE_runaire")`
+# directly rather than pulling in `assert_cmd` + `predicates` (which would
+# add ~15 transitives: bstr, doc-comment, predicates-{core,tree}, float-cmp,
+# normalize-line-endings, difflib, wait-timeout, anstyle, anstream, ...).
+# `std::process::Command` is sufficient for the assertions Phase 1 needs.
+tempfile = "3.10"

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/runaire-core",
+    "crates/runaire-security",
     "crates/runaire-genpw",
     "crates/runaire-cli",
     "crates/runaire-tui",
