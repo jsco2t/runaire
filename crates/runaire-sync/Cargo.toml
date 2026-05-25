@@ -1,0 +1,34 @@
+[package]
+name = "runaire-sync"
+description = "Rùnaire git-transport sync: SyncTransport trait, three-way KDBX merge, and vaults.toml sync configuration."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# First-party. The dependency arrow points only into core (ADR-001); this
+# crate never depends on the UI crates, and core never depends on it.
+runaire-core = { path = "../runaire-core", version = "0.1" }
+
+# Phase 1 (config / error skeleton) deps only. `gix-*`, `argon2`, and
+# `chacha20poly1305` are intentionally NOT here yet — Phase 2 (T2.1) vendors
+# them when the transport and credential container land. `runaire-security`
+# is likewise deferred to the orchestration phase: its
+# `register_activity(&mut self, …)` API has to settle the activity-pinger's
+# borrow shape before `SyncOptions` commits to it (see src/sync.rs).
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+thiserror = "2.0"
+zeroize = { version = "1.8", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+# vaults.toml round-trip tests (TC-CONFIG-008..010) write a registry to a
+# temp dir and reload it.
+tempfile = "3.10"

@@ -4,6 +4,7 @@ members = [
     "crates/runaire-core",
     "crates/runaire-security",
     "crates/runaire-genpw",
+    "crates/runaire-sync",
     "crates/runaire-cli",
     "crates/runaire-tui",
     "crates/runaire-agent",

@@ -1325,6 +1325,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "runaire-sync"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "runaire-core",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "zeroize",
+]
+
+[[package]]
 name = "runaire-tui"
 version = "0.1.0"
 
