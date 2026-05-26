@@ -80,6 +80,7 @@ The canonical targets:
 
 | Target              | What it does                                                 |
 | ------------------- | ------------------------------------------------------------ |
+| `make toolchain`    | One-time dev bootstrap: Rust (via `rustup`), `keepassxc-cli`, `cargo-deny`/`audit` (x-plat, idempotent) |
 | `make build`        | `cargo build --workspace --offline --locked`                 |
 | `make test`         | Default-parallel tests (`--offline --locked`)                |
 | `make test-ignored` | `#[ignore]`d tests, serial (`--test-threads=1`) — env-mutating tests, etc. |

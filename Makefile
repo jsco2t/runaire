@@ -21,13 +21,25 @@ CLIPPY_FLAGS   := --workspace --all-targets --offline --locked -- -D warnings
 # Devs who know what they want type `make build`, `make test`, `make check`.
 .DEFAULT_GOAL := help
 
-.PHONY: help build test test-ignored test-all test-clipboard test-os-events \
+.PHONY: help toolchain build test test-ignored test-all test-clipboard test-os-events \
         fmt fmt-check lint lint-fix \
         check verify interop interop-entry bench bench-search bench-search-gate \
         vendor deny audit doc clean completions completions-check
 
 help:  ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; print "Usage: make <target>\n\nTargets:"} /^[a-zA-Z_-]+:.*##/ {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# ---------------------------------------------------------------------------
+# One-time environment setup — run this first on a fresh machine.
+# ---------------------------------------------------------------------------
+
+toolchain:  ## Install all dev tooling (Rust toolchain, keepassxc-cli, cargo-deny/audit). Run first on a new machine.
+	# Cross-platform bootstrap (Linux + macOS). Idempotent — re-running
+	# skips already-installed tools. Tool versions are pinned to match CI
+	# (.github/workflows/ci.yml). After this, `make check` works offline.
+	# Invoked directly (not via `sh`) so its bash shebang is honoured —
+	# the script uses `set -o pipefail`, which POSIX `sh`/dash lacks.
+	tools/dev/install-toolchain.sh
 
 # ---------------------------------------------------------------------------
 # Core developer loop — these match CI exactly.
