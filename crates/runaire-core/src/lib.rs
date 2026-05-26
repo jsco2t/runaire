@@ -77,7 +77,7 @@ pub use entry::{
 };
 pub use error::VaultError;
 pub use keepass::config::DatabaseConfig;
-pub use keepass::db::{fields, Entry, EntryRef, Group, GroupRef, Value};
+pub use keepass::db::{fields, Entry, EntryRef, Group, GroupRef, Times, Value};
 pub use keepass::Database;
 pub use locking::{ExclusiveLock, SharedLock};
 pub use paths::RunairePaths;

@@ -223,6 +223,20 @@ pub enum VaultError {
         /// Human-readable non-secret reason.
         reason: &'static str,
     },
+
+    /// A database being installed via [`crate::Vault::replace_database`] does
+    /// not describe the same vault: its root-group UUID differs from the
+    /// current one. Installing it would silently swap the vault's identity, so
+    /// the operation is refused.
+    #[error(
+        "database identity mismatch: root group {found} does not match the vault's {expected}"
+    )]
+    DatabaseIdentityMismatch {
+        /// Root-group UUID of the current (target) database.
+        expected: Uuid,
+        /// Root-group UUID of the database that was offered.
+        found: Uuid,
+    },
 }
 
 #[cfg(test)]

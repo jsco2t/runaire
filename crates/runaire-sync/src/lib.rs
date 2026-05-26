@@ -2,9 +2,10 @@
 //!
 //! This crate owns FR-040..046: per-vault git sync configuration, a
 //! transport-agnostic [`SyncTransport`] trait (FR-046), the gix-backed
-//! [`GitTransport`], and a pure three-way KDBX [`merge`] engine (FR-043)
-//! whose loser-of-a-collision is preserved as a KDBX history entry. The
-//! [`Sync`] orchestrator wires those together.
+//! [`GitTransport`], and a two-way KDBX [`merge`] adapter (FR-043) that
+//! reconciles a local and remote vault by entry UUID, preserving the loser of
+//! a collision as a KDBX history entry. The [`Sync`] orchestrator wires those
+//! together.
 //!
 //! Per ADR-001 the dependency arrow points only into `runaire-core`: this
 //! crate consumes [`runaire_core::Vault`] / [`runaire_core::Database`] but
@@ -35,7 +36,7 @@ pub mod transport;
 pub use auth::encrypt_credential;
 pub use config::{AuthKind, SyncConfig};
 pub use error::SyncError;
-pub use merge::{EntryDelta, MergeError, MergedDatabase};
+pub use merge::{reconcile, EntryDelta, MergeError, MergeSummary};
 pub use sync::{Sync, SyncOptions, SyncOutcome};
 pub use transport::git::GitTransport;
 pub use transport::{ContentVersion, PushResult, SyncTransport};

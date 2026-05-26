@@ -16,19 +16,51 @@ workspace = true
 # crate never depends on the UI crates, and core never depends on it.
 runaire-core = { path = "../runaire-core", version = "0.1" }
 
-# Phase 1 (config / error skeleton) deps only. `gix-*`, `argon2`, and
-# `chacha20poly1305` are intentionally NOT here yet — Phase 2 (T2.1) vendors
-# them when the transport and credential container land. `runaire-security`
-# is likewise deferred to the orchestration phase: its
-# `register_activity(&mut self, …)` API has to settle the activity-pinger's
-# borrow shape before `SyncOptions` commits to it (see src/sync.rs).
+# Config / error skeleton (Phase 1).
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 thiserror = "2.0"
 zeroize = { version = "1.8", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
+# Git transport (FR-046, Phase 2/3). `default-features = false` keeps the tree
+# minimal; Windows-only transitives never link (out of scope, CLAUDE.md).
+# Feature set is deliberately the minimum the Phase-2 ops-matrix spike
+# exercises (file:// + ssh:// git protocol, ref/object reads, merge-base);
+# more features are added in the phase that consumes them ("add as needed",
+# task T2.1):
+#   - blocking-network-client: blocking git protocol over file:// and ssh://
+#     (ssh:// uses the system `ssh` binary + ssh-agent — no extra SSH crate).
+#   - revision: merge-base computation for the FR-043 three-way merge.
+# NOTE: the HTTPS transport feature (blocking-http-transport-reqwest-rust-tls)
+# is intentionally DEFERRED to Phase 3 (FR-045 HTTPS auth). It pulls the
+# reqwest/rustls subtree, and rustls cert-root crates commonly carry MPL-2.0
+# (e.g. webpki-roots), which is NOT on the deny.toml allowlist — that license
+# question is resolved when HTTPS sync is actually implemented, not here.
+gix = { version = "0.78", default-features = false, features = [
+    "blocking-network-client",
+    "revision",
+] }
+
+# RST-CRED-1 encrypted-credential container (design §2.2.3, consumed in
+# Phase 3 T3.5). Vendored now so the whole sync dep batch goes through one
+# supply-chain review. RustCrypto family (pure Rust):
+#   NOTE: `argon2` (RustCrypto) duplicates the `rust-argon2` Argon2 already
+#   vendored for keepass-rs's KDBX KDF. Whether to reuse `rust-argon2` for the
+#   credential KDF instead (thinner tree) is an open decision for T3.5 — see
+#   the Phase-2 report / CONTRIBUTING dependency log.
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+base64 = "0.22"
+# Commit-message host line (design §2.6); pure-Rust, Unix+macOS supported.
+gethostname = "1"
+
 [dev-dependencies]
 # vaults.toml round-trip tests (TC-CONFIG-008..010) write a registry to a
 # temp dir and reload it.
 tempfile = "3.10"
+# Merge-engine property tests (Phase 4) + fuzz target structured input
+# (Phase 6). Vendored now to batch the supply-chain review.
+proptest = "1"
+proptest-derive = "0.5"
+arbitrary = { version = "1", features = ["derive"] }

@@ -145,6 +145,53 @@ The PR description must include a checklist of:
 CI gates merge on `make deny` (license + advisory + bans) and
 `make audit` (RustSec advisories).
 
+### Dependency Review Log
+
+Direct dependencies added through the workflow above, newest first. Each line
+records the review at its add point; transitive crates are covered en masse by
+`make deny` (license + bans) over the four Phase-0 targets.
+
+#### `keepass` `_merge` feature enabled (Phase 4, 2026-05-26)
+
+**No new crate.** A feature flag on the already-vendored, exact-pinned
+`keepass = "=0.12.9"` (in `runaire-core`): `features = ["save_kdbx4", "_merge"]`.
+`_merge` (an empty feature, `_merge = []`) compiles the crate's UUID-keyed
+two-way `Database::merge`, which the sync layer reuses behind
+`runaire_sync::merge::reconcile` (design ADR-008). No dependency-graph, license,
+or `cargo deny` impact (verified: `make check` green). It is an **experimental**
+(`_`-prefixed) upstream feature, accepted under the same posture as keepass's
+experimental KDBX4 *write* (KB `keepass-rs-library.md` limitation #1): pinned +
+vendored so it only moves on a deliberate upgrade, and its observable semantics
+are pinned by a defensive characterization suite
+(`crates/runaire-sync/tests/merge_semantics.rs`) that fails CI if a future bump
+changes merge behaviour. **Upgrade rule:** any bump of the keepass pin must
+re-run that suite and review upstream `_merge` changes before landing.
+
+#### `runaire-sync` — git sync (Phase 2, 2026-05-25)
+
+The largest single addition so far: the `gix` family pulled the vendored tree
+from 239 → 358 crates (+119). `make deny` is green; no `deny.toml` change was
+needed (all new transitives resolve to a permitted license; the only
+non-permissive licenses in the tree — `BSL-1.0` for `clipboard-win`,
+`LGPL`/`0BSD` offered as an SPDX `OR` branch — are Windows-only (excluded by
+`deny.toml` target scoping) or selectable under a permitted branch).
+
+| Crate | Ver | License | Maintenance / popularity | Notes |
+| --- | --- | --- | --- | --- |
+| `gix` | 0.78 | MIT OR Apache-2.0 | `Byron/gitoxide`, very active; the pure-Rust git impl chosen over `libgit2`/`git2` (CLAUDE.md). | `default-features=false`; only `blocking-network-client` + `revision`. **Spike (T2.2) found gix 0.78 cannot push** → push shells out to the `git` CLI (T3.6). HTTPS transport feature deferred to Phase 3 (would pull `reqwest`/`rustls`; `webpki-roots` is MPL-2.0, not allowlisted). |
+| `argon2` | 0.5 | MIT OR Apache-2.0 | RustCrypto; foundational, widely used. | RST-CRED-1 KDF (design §2.2.3). **Duplicates `rust-argon2`** (keepass's KDBX KDF). T3.5 should decide whether to reuse `rust-argon2` and drop this — see follow-ups. |
+| `chacha20poly1305` | 0.10 | Apache-2.0 OR MIT | RustCrypto; foundational. | RST-CRED-1 AEAD. |
+| `base64` | 0.22 | MIT OR Apache-2.0 | `marshallpierce/rust-base64`; ubiquitous. | Already vendored transitively; now a direct dep for the credential container encoding. |
+| `gethostname` | 1.1 | Apache-2.0 | `swsnr/gethostname`; small, stable, Unix+Windows. | Commit-message host line (design §2.6). |
+| `proptest` (dev) | 1.x | MIT OR Apache-2.0 | `proptest-rs`; the standard Rust property-testing crate. | Merge-engine property tests (Phase 4/6). Dev-only. |
+| `proptest-derive` (dev) | 0.5 | MIT OR Apache-2.0 | `proptest-rs`. | Dev-only. |
+| `arbitrary` (dev) | 1.x | MIT OR Apache-2.0 | `rust-fuzz/arbitrary`; standard for fuzz input. | Fuzz-target structured input (Phase 6). Dev-only. |
+
+Banned-crate scan after vendoring: no `openssl`/`openssl-sys`/`native-tls`/`git2`/`libgit2-sys`,
+and no `reqwest`/`rustls`/`webpki`/`ring`/`curl` (HTTPS transport deferred).
+(Maintenance/popularity above is asserted from ecosystem familiarity; the
+authoritative `vendor/` source-diff review is done by the reviewer per step 4.)
+
 ---
 
 ## Testing conventions

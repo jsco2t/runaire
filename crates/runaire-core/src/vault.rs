@@ -209,6 +209,58 @@ impl Vault {
     pub fn database_mut(&mut self) -> &mut Database {
         &mut self.database
     }
+
+    /// Decrypt a KDBX database from in-memory bytes, without touching the
+    /// filesystem or acquiring a lock.
+    ///
+    /// Used by `runaire-sync` to decrypt a remote vault snapshot fetched over
+    /// the sync transport (a git blob, etc.) so it can be fed into the merge.
+    /// Returns the parsed [`Database`] rather than a [`Vault`] because the
+    /// snapshot is path-less and lock-less — it is consumed read-only by the
+    /// merge and then dropped; a partial `Vault` with a panicking `path()`
+    /// would be the wrong shape. The key is derived from `master` (and
+    /// `keyfile`) exactly as [`Vault::open`] does, so a snapshot encrypted with
+    /// a different master password surfaces as [`VaultError::AuthenticationFailed`].
+    ///
+    /// `#[doc(hidden)]`: cross-crate-internal API for the sync layer, not part
+    /// of the general public surface.
+    #[doc(hidden)]
+    pub fn open_from_bytes(
+        bytes: &[u8],
+        master: &MasterPassword,
+        keyfile: Option<&Keyfile>,
+    ) -> Result<Database, VaultError> {
+        let key = build_database_key(master, keyfile)?;
+        let mut cursor = std::io::Cursor::new(bytes);
+        Database::open(&mut cursor, key)
+            .map_err(|source| map_open_error(source, Path::new("<memory>")))
+    }
+
+    /// Replace the in-memory database with `new_db`, after verifying it
+    /// describes the same vault (identical root-group UUID).
+    ///
+    /// Used by `runaire-sync` to install a merged or fast-forwarded database
+    /// before [`Vault::save`]. The root-group-UUID guard refuses a database
+    /// from a different vault — installing one would silently swap the vault's
+    /// identity (and desynchronise the registry), so it returns
+    /// [`VaultError::DatabaseIdentityMismatch`] rather than corrupting state.
+    ///
+    /// `#[doc(hidden)]`: cross-crate-internal API for the sync layer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VaultError::DatabaseIdentityMismatch`] if `new_db`'s root-group
+    /// UUID differs from the current database's.
+    #[doc(hidden)]
+    pub fn replace_database(&mut self, new_db: Database) -> Result<(), VaultError> {
+        let expected = self.database.root().id().uuid();
+        let found = new_db.root().id().uuid();
+        if expected != found {
+            return Err(VaultError::DatabaseIdentityMismatch { expected, found });
+        }
+        self.database = new_db;
+        Ok(())
+    }
 }
 
 impl VaultReadOnly {
