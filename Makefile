@@ -77,8 +77,15 @@ test-ignored:  ## Run #[ignore]d tests serially (env-mutating + signal-handler t
 
 test-all: test test-ignored  ## Run both default and #[ignore]d tests.
 
-test-clipboard:  ## Run runaire-security clipboard tests (requires real display; wrap in xvfb-run on CI).
-	$(CARGO) test -p runaire-security --offline --locked --test us_053_clipboard_autoclear -- --ignored --test-threads=1
+test-clipboard:  ## Run clipboard tests across runaire-security + runaire-cli (requires real display; wrap in xvfb-run on CI).
+	# Spans two crates: the security crate's US-053 auto-clear cases and
+	# the CLI's `entry get --copy` hand-off. Both files are gated behind
+	# each crate's `clipboard-tests` feature so they stay out of the
+	# blanket `make test-ignored` sweep; this target is the only one that
+	# enables the feature. They drive the real system clipboard, so they
+	# need a usable display/pasteboard (xvfb on Linux CI).
+	$(CARGO) test -p runaire-security --offline --locked --features clipboard-tests --test us_053_clipboard_autoclear -- --ignored --test-threads=1
+	$(CARGO) test -p runaire-cli --offline --locked --features clipboard-tests --test cli_clipboard_handoff -- --ignored --test-threads=1
 
 test-os-events:  ## Run runaire-security OS-event integration tests (Phase 5: logind on Linux, IOKit on macOS).
 	# `--features test-binaries,logind` enables the `logind_helper`

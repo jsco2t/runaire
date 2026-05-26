@@ -17,8 +17,8 @@
 //!
 //! ## Test seam
 //!
-//! The [`ClipboardBackend`] trait is `pub(crate)` so unit tests under
-//! `#[cfg(test)]` can drive [`copy_with_autoclear_inner`] against a
+//! The `ClipboardBackend` trait is `pub(crate)` so unit tests under
+//! `#[cfg(test)]` can drive `copy_with_autoclear_inner` against a
 //! `FakeClipboardBackend` without a real display. The trait is
 //! deliberately NOT public: every consumer goes through [`Clipboard`].
 

@@ -15,6 +15,12 @@
 //! - stdout is empty (the password was not echoed).
 //! - stderr contains the documented "copied to clipboard" line.
 //! - The whole call returns within `TTL + slack`.
+//!
+//! The whole file is gated behind the `clipboard-tests` cargo feature
+//! so the blanket `make test-ignored` sweep
+//! (`cargo test --workspace -- --ignored`) never compiles or runs it on
+//! a headless host. Only `make test-clipboard` enables the feature.
+#![cfg(feature = "clipboard-tests")]
 
 mod common;
 

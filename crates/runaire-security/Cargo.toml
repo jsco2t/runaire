@@ -86,6 +86,16 @@ runaire-core = { path = "../runaire-core", version = "0.1" }
 # out of the user-facing distribution.
 test-binaries = []
 
+# Test-only feature gate for the US-053 clipboard integration tests.
+# Those cases drive the real system clipboard (`arboard`), so they need
+# a usable display/pasteboard and must NOT be swept up by the blanket
+# `make test-ignored` (`cargo test --workspace -- --ignored`) run on
+# headless hosts (Linux without `xvfb`, macOS CLI). Gating the whole
+# test file behind this feature keeps it out of every build that does
+# not opt in — mirrors the `logind` precedent. `make test-clipboard`
+# enables it; nothing else does.
+clipboard-tests = []
+
 # Phase 5 T5.1 — opt-in Linux logind support via `zbus`. Default-off
 # so default `cargo build --workspace` does NOT pull the DBus
 # dependency tree. Consumers (frontends) that want screen-lock /

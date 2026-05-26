@@ -22,6 +22,15 @@ path = "src/main.rs"
 name = "runaire_cli"
 path = "src/lib.rs"
 
+[features]
+# Test-only gate for the `entry get --copy` clipboard hand-off
+# integration test. It spawns the binary, which opens the real system
+# clipboard via `arboard`, so it needs a usable display/pasteboard and
+# must NOT be swept up by `make test-ignored`
+# (`cargo test --workspace -- --ignored`) on headless hosts. Mirrors
+# `runaire-security/clipboard-tests`; enabled only by `make test-clipboard`.
+clipboard-tests = []
+
 [dependencies]
 # CLI parsing. `clap` is the project-standard parser (see CLAUDE.md
 # "Key libraries"). `derive` enables the struct/enum-based subcommand

@@ -41,7 +41,7 @@ use crate::error::SecurityError;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VaultLockConfig {
     /// Idle timeout in seconds. Defaults to 600 (10 min) when the
-    /// field is missing — see [`default_idle_timeout_seconds`].
+    /// field is missing — see `default_idle_timeout_seconds`.
     #[serde(default = "default_idle_timeout_seconds")]
     pub idle_timeout_seconds: u64,
 }

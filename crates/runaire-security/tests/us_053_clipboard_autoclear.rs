@@ -32,6 +32,16 @@
 //! skipped, since GitHub-hosted macOS runners do not expose a usable
 //! Pasteboard. The macOS verification is manual via
 //! `notebook/.../verifications/security.md` US-053.
+//!
+//! ## Feature gate
+//!
+//! The whole file is gated behind the `clipboard-tests` cargo feature.
+//! Without it the file is not compiled, so the blanket `make
+//! test-ignored` sweep (`cargo test --workspace -- --ignored`) can never
+//! reach these cases on a headless host. `make test-clipboard` enables
+//! the feature; nothing else does. Mirrors the `logind`-feature gate on
+//! `us_052_post_mvp_logind.rs`.
+#![cfg(feature = "clipboard-tests")]
 
 use std::time::Duration;
 

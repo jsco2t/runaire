@@ -5,8 +5,8 @@
 //! promises (FR-030..032 surface). Each body returns
 //! [`CliExit::NotImplemented`] (exit 11) until `features/ssh-keys/`
 //! ships the real implementation, which consumes the flag surfaces
-//! declared in [`crate::cli::SshAddArgs`] / [`SshLoadArgs`] /
-//! [`SshGenerateArgs`] verbatim.
+//! declared in [`crate::cli::SshAddArgs`] / [`crate::cli::SshLoadArgs`] /
+//! [`crate::cli::SshGenerateArgs`] verbatim.
 
 use crate::cli::{Cli, SshArgs, SshVerb};
 use crate::exit::CliExit;
