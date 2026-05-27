@@ -184,6 +184,50 @@ are pinned by a defensive characterization suite
 changes merge behaviour. **Upgrade rule:** any bump of the keepass pin must
 re-run that suite and review upstream `_merge` changes before landing.
 
+#### `runaire-sync` — HTTPS transport + pure-Rust send-pack (Phase 2b, 2026-05-26)
+
+ADR-007: gix 0.78 has no push and the mobile ship target rules out a `git`
+subprocess, so **fetch runs over our own `rustls` HTTP backend** and **push is a
+pure-Rust smart-HTTP `send-pack`** on gix plumbing. This adds the TLS stack and
+promotes gix's base `http-client`/pack plumbing to direct deps. The T2b.1 spike
+validated the whole flow against real GitHub (fetch) + a local `git http-backend`
+(send-pack), and `runaire-sync` `cargo check`s clean for **both** mobile targets
+(`aarch64-apple-ios` via Xcode SDK, `aarch64-linux-android` via NDK clang).
+`make deny` green.
+
+| Crate | Ver | License | Maintenance / popularity | Notes |
+| --- | --- | --- | --- | --- |
+| `rustls` | 0.23 | MIT OR Apache-2.0 OR ISC | `rustls` project; the standard pure-Rust TLS. | `default-features=false` + `ring,std,tls12` — pins the **`ring`** provider, **NOT** the default `aws-lc-rs` (more C; ADR-007). Powers fetch + send-pack over HTTPS. |
+| `ring` | 0.17 | `MIT AND ISC AND OpenSSL` (pre-cleared in `deny.toml [[licenses.clarify]]`) | `briansmith/ring`; the most-deployed Rust crypto provider, incl. iOS/Android. | Transitive via rustls's `ring` feature. Build compiles C/asm → needs the platform C toolchain (Xcode iOS SDK / Android NDK) — both verified to cross-compile. |
+| `rustls-platform-verifier` | 0.5 | MIT OR Apache-2.0 | `rustls/rustls-platform-verifier`. | Native OS trust store (macOS/iOS/Android) + system-CA on Linux. **The linchpin that avoids `webpki-roots` (MPL-2.0, banned).** Pulls `-android` + `jni` on Android (runtime JVM-init = a Phase-2 Flutter-bridge detail). |
+| `gix-transport` | 0.53 | MIT OR Apache-2.0 | gitoxide. | Base `http-client` feature only — the `Http` backend trait + generic smart-HTTP `Transport`, **without** curl/reqwest (C-free). We implement `Http` over rustls and use `connect_http`. |
+| `gix-protocol` | 0.56 | MIT OR Apache-2.0 | gitoxide. | `blocking-client`; handshake / `ls-refs` / fetch. |
+| `gix-pack` | 0.65 | MIT OR Apache-2.0 | gitoxide. | Pack-v2 generation for send-pack (`data::output::Entry::from_data` + `FromEntriesIter`; single-threaded, no `parallel` feature). |
+| `gix-object` / `gix-odb` / `gix-hash` | 0.55 / 0.75 / 0.22 | MIT OR Apache-2.0 | gitoxide. | Object authoring + odb reads feeding pack generation. |
+| `gix-url` | 0.35 | MIT OR Apache-2.0 | gitoxide. | URL parsing for `connect_http`. |
+
+`ureq` was evaluated and **NOT** added: a hand-rolled minimal HTTP/1.1 client over
+the rustls stream suffices, and `ureq` defaults its roots to `webpki-roots`
+(MPL-2.0). SSH auth is **deferred** (FR-045; candidate `russh`).
+
+Banned-crate scan after vendoring: confirmed **no `webpki-roots`,
+`openssl`/`openssl-sys`, `native-tls`, `aws-lc-rs`/`aws-lc-sys`,
+`git2`/`libgit2-sys`, or `curl`** in the graph. (rustls rides `ring`; cert-path
+validation is `rustls-webpki`, Apache-2.0 OR ISC.) **Trust roots per target:**
+macOS/iOS → `security-framework`; Android → `rustls-platform-verifier-android`
+(+ `jni`); Linux → `rustls-native-certs` (+ `openssl-probe`) — all permissive.
+**Note on `vendor/webpki-root-certs/`:** this is *not* the banned `webpki-roots`
+(MPL-2.0) — it is a distinct crate (`CDLA-Permissive-2.0`) that
+`rustls-platform-verifier` declares only as a **fallback for "other" platforms**.
+It is **cfg-gated out of every target we ship** (verified absent from the
+`cargo tree` graphs for macOS-arm64, Linux-x86_64, iOS-arm64 and Android-arm64;
+the trust backend is selected by OS, not architecture, so the x86_64-macOS and
+arm64-Linux siblings resolve identically); it appears under
+`vendor/` solely because `cargo vendor` snapshots the full cfg-union of the lock,
+exactly like the Windows-only `clipboard-win` (BSL-1.0). If a mobile/other triple
+is ever added to `deny.toml`'s `targets`, decide then whether to allowlist
+`CDLA-Permissive-2.0` or disable the fallback.
+
 #### `runaire-sync` — git sync (Phase 2, 2026-05-25)
 
 The largest single addition so far: the `gix` family pulled the vendored tree
@@ -195,7 +239,7 @@ non-permissive licenses in the tree — `BSL-1.0` for `clipboard-win`,
 
 | Crate | Ver | License | Maintenance / popularity | Notes |
 | --- | --- | --- | --- | --- |
-| `gix` | 0.78 | MIT OR Apache-2.0 | `Byron/gitoxide`, very active; the pure-Rust git impl chosen over `libgit2`/`git2` (CLAUDE.md). | `default-features=false`; only `blocking-network-client` + `revision`. **Spike (T2.2) found gix 0.78 cannot push** → push shells out to the `git` CLI (T3.6). HTTPS transport feature deferred to Phase 3 (would pull `reqwest`/`rustls`; `webpki-roots` is MPL-2.0, not allowlisted). |
+| `gix` | 0.78 | MIT OR Apache-2.0 | `Byron/gitoxide`, very active; the pure-Rust git impl chosen over `libgit2`/`git2` (CLAUDE.md). | `default-features=false`; only `blocking-network-client` + `revision`. **Spike (T2.2) found gix 0.78 cannot push.** _(The original remedy here — git-CLI shell-out / T3.6 — was **superseded same-day by ADR-007**: push is a pure-Rust smart-HTTP send-pack, and the rustls HTTPS stack landed in Phase 2b above. See that entry.)_ |
 | `argon2` | 0.5 | MIT OR Apache-2.0 | RustCrypto; foundational, widely used. | RST-CRED-1 KDF (design §2.2.3). **Duplicates `rust-argon2`** (keepass's KDBX KDF). T3.5 should decide whether to reuse `rust-argon2` and drop this — see follow-ups. |
 | `chacha20poly1305` | 0.10 | Apache-2.0 OR MIT | RustCrypto; foundational. | RST-CRED-1 AEAD. |
 | `base64` | 0.22 | MIT OR Apache-2.0 | `marshallpierce/rust-base64`; ubiquitous. | Already vendored transitively; now a direct dep for the credential container encoding. |
@@ -204,8 +248,11 @@ non-permissive licenses in the tree — `BSL-1.0` for `clipboard-win`,
 | `proptest-derive` (dev) | 0.5 | MIT OR Apache-2.0 | `proptest-rs`. | Dev-only. |
 | `arbitrary` (dev) | 1.x | MIT OR Apache-2.0 | `rust-fuzz/arbitrary`; standard for fuzz input. | Fuzz-target structured input (Phase 6). Dev-only. |
 
-Banned-crate scan after vendoring: no `openssl`/`openssl-sys`/`native-tls`/`git2`/`libgit2-sys`,
-and no `reqwest`/`rustls`/`webpki`/`ring`/`curl` (HTTPS transport deferred).
+Banned-crate scan after vendoring (at Phase-2 add-point): no
+`openssl`/`openssl-sys`/`native-tls`/`git2`/`libgit2-sys`/`curl`. _(Phase 2b
+subsequently added `rustls` + `ring` + `rustls-platform-verifier` for HTTPS —
+still no `openssl`/`native-tls`/`aws-lc-rs`/`webpki-roots`; see the Phase-2b entry
+above.)_
 (Maintenance/popularity above is asserted from ecosystem familiarity; the
 authoritative `vendor/` source-diff review is done by the reviewer per step 4.)
 

@@ -55,6 +55,40 @@ base64 = "0.22"
 # Commit-message host line (design §2.6); pure-Rust, Unix+macOS supported.
 gethostname = "1"
 
+# --- HTTPS smart-transport + pure-Rust send-pack stack (Phase 2b / ADR-007) ---
+# Phase-2 spike proved gix 0.78 has NO push API; push is a pure-Rust smart-HTTP
+# `send-pack` on gix plumbing, and fetch runs over our OWN rustls HTTP backend
+# (gix's default curl transport is intentionally OFF — no C in a secrets
+# manager's network path). gix-transport's BASE `http-client` feature exposes
+# the `Http` backend trait + the generic smart-HTTP `Transport` WITHOUT pulling
+# curl or reqwest; we implement `Http` over rustls and hand it to
+# `gix_transport::client::http::connect_http`. Direct deps pin the gix plumbing
+# at our supply-chain review point (all MIT OR Apache-2.0, already vendored).
+gix-transport = { version = "0.53", default-features = false, features = [
+    "http-client",
+    "blocking-client",
+] }
+gix-protocol = { version = "0.56", default-features = false, features = [
+    "blocking-client",
+] }
+gix-pack = "0.65"
+gix-object = "0.55"
+gix-odb = "0.75"
+gix-hash = "0.22"
+gix-url = "0.35"
+
+# Pure-Rust TLS. rustls 0.23 DEFAULTS to the aws-lc-rs (C) provider, so we pin
+# default-features = false and select the `ring` provider explicitly — keeps the
+# crypto path C-free. `rustls-platform-verifier` uses the native OS trust store
+# (macOS/iOS/Android) and the system-CA bundle on Linux, which AVOIDS
+# `webpki-roots` (MPL-2.0, banned by deny.toml). HTTPS-only (SSH deferred).
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+rustls-platform-verifier = "0.5"
+
 [dev-dependencies]
 # vaults.toml round-trip tests (TC-CONFIG-008..010) write a registry to a
 # temp dir and reload it.

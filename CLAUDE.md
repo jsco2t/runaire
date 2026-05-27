@@ -78,23 +78,23 @@ When implementing a feature, the corresponding `plans/implementation-plan.md` an
 
 The canonical targets:
 
-| Target              | What it does                                                 |
-| ------------------- | ------------------------------------------------------------ |
+| Target              | What it does                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
 | `make toolchain`    | One-time dev bootstrap: Rust (via `rustup`), `keepassxc-cli`, `cargo-deny`/`audit` (x-plat, idempotent) |
-| `make build`        | `cargo build --workspace --offline --locked`                 |
-| `make test`         | Default-parallel tests (`--offline --locked`)                |
-| `make test-ignored` | `#[ignore]`d tests, serial (`--test-threads=1`) — env-mutating tests, etc. |
-| `make test-all`     | Both of the above                                            |
-| `make fmt`          | Auto-format the workspace                                    |
-| `make fmt-check`    | Format check (CI gate)                                       |
-| `make lint`         | `cargo clippy ... -- -D warnings` (CI gate)                  |
-| `make lint-fix`     | Apply safe clippy suggestions                                |
-| `make check`        | `fmt-check` + `lint` + `build` + `test` (the full local CI gate) |
-| `make deny`         | `cargo deny check` (license + advisory + bans)               |
-| `make audit`        | `cargo audit` (RustSec advisories)                           |
-| `make doc`          | Generate API docs (`cargo doc --no-deps --offline`)          |
-| `make vendor`       | Re-vendor deps (the only target that needs network)          |
-| `make clean`        | Remove build artifacts                                       |
+| `make build`        | `cargo build --workspace --offline --locked`                                                            |
+| `make test`         | Default-parallel tests (`--offline --locked`)                                                           |
+| `make test-ignored` | `#[ignore]`d tests, serial (`--test-threads=1`) — env-mutating tests, etc.                              |
+| `make test-all`     | Both of the above                                                                                       |
+| `make fmt`          | Auto-format the workspace                                                                               |
+| `make fmt-check`    | Format check (CI gate)                                                                                  |
+| `make lint`         | `cargo clippy ... -- -D warnings` (CI gate)                                                             |
+| `make lint-fix`     | Apply safe clippy suggestions                                                                           |
+| `make check`        | `fmt-check` + `lint` + `build` + `test` (the full local CI gate)                                        |
+| `make deny`         | `cargo deny check` (license + advisory + bans)                                                          |
+| `make audit`        | `cargo audit` (RustSec advisories)                                                                      |
+| `make doc`          | Generate API docs (`cargo doc --no-deps --offline`)                                                     |
+| `make vendor`       | Re-vendor deps (the only target that needs network)                                                     |
+| `make clean`        | Remove build artifacts                                                                                  |
 
 ### Keeping the Makefile up to date — a project rule
 
@@ -137,3 +137,18 @@ If a target's command becomes long or grows multiple cases, prefer adding flag v
 - **Phase 4 — Vault operations: not started.** Next task is **T4.1 (`unlock` module + `keepass-rs` vendor + version pin)**. See `…/features/vault-core/tasks/04-vault-operations.md`.
 
 See `…/features/vault-core/tasks/task-plan.md` for the rollup view and `…/features/vault-core/tasks/index.md` for the live task-tracking table.
+
+## Shell command style
+
+Prefer running commands as seperate Bash tool calls rather than chaining them with `&&`, `||`, `;`,
+or pipes. Each command should be its own invocation so the permission matcher can authorize them
+individual.
+
+Exceptions where chaining is fine:
+
+- Pipes that are part of a single logical operation (`grep ... | wc -l`, `cat foo | jq .bar`) - these
+  only make sense as one command.
+
+- `cd <dir> && <cmd>` when the directory change must scope to that one command and not persist.
+
+When in doubt, run them separately.
