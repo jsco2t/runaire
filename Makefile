@@ -17,6 +17,12 @@ CARGO          := cargo
 CARGO_FLAGS    := --workspace --offline --locked
 CLIPPY_FLAGS   := --workspace --all-targets --offline --locked -- -D warnings
 
+# Host OS — used to pick the platform-appropriate OS-event source test
+# (logind on Linux, IOKit on macOS); the wrong-platform feature won't
+# even resolve (`logind`→`zbus` is Linux-target-only; `iokit`→`objc2`
+# is macOS-target-only), so `test-os-events` must not invoke both.
+UNAME_S        := $(shell uname -s)
+
 # `make` with no args shows the help screen — friendlier for first-run.
 # Devs who know what they want type `make build`, `make test`, `make check`.
 .DEFAULT_GOAL := help
@@ -58,13 +64,16 @@ check-macos:  ## Type-check runaire-security against macOS targets (Level-1 cros
 	# wrong-extern-symbol-name or behavioural bugs — for those you
 	# need a real macOS host (see CONTRIBUTING.md "macOS verification").
 	#
-	# `--all-features` is intentionally NOT passed: `logind` is
-	# Linux-only (target-cfg-gated dep on `zbus`) and `cargo check`
-	# refuses to enable a feature whose deps don't resolve on the
-	# target. We check the security crate with default features only,
-	# which is what a downstream macOS consumer would see.
-	$(CARGO) check --target aarch64-apple-darwin --offline --locked -p runaire-security
-	$(CARGO) check --target x86_64-apple-darwin  --offline --locked -p runaire-security
+	# `--features iokit` is passed so `os_events/macos.rs` actually
+	# compiles under this gate (default features `#[cfg]` it out, which
+	# would make the "catches macos.rs drift" claim above hollow). The
+	# `iokit` feature only pulls the `objc2` ecosystem, all macOS-target
+	# deps already in the vendored tree, so it resolves `--offline`.
+	# `--all-features` is intentionally NOT used: it would also flip on
+	# `logind`, whose `zbus` dep is Linux-target-only and would fail to
+	# resolve for an apple-darwin target.
+	$(CARGO) check --target aarch64-apple-darwin --offline --locked -p runaire-security --features iokit
+	$(CARGO) check --target x86_64-apple-darwin  --offline --locked -p runaire-security --features iokit
 
 test:  ## Run default-parallel tests (offline, vendored).
 	$(CARGO) test $(CARGO_FLAGS)
@@ -88,15 +97,33 @@ test-clipboard:  ## Run clipboard tests across runaire-security + runaire-cli (r
 	$(CARGO) test -p runaire-cli --offline --locked --features clipboard-tests --test cli_clipboard_handoff -- --ignored --test-threads=1
 
 test-os-events:  ## Run runaire-security OS-event integration tests (Phase 5: logind on Linux, IOKit on macOS).
-	# `--features test-binaries,logind` enables the `logind_helper`
-	# binary and the `logind` cargo feature that compiles
-	# `os_events/logind.rs` and its `zbus` dep tree. Tests are
-	# `#[ignore]`d so the default `make test` skips them; they require
-	# a logind-enabled host + `dbus-send` + `busctl` to drive the
-	# signals from outside the helper process. Selects test binaries
-	# by `--test <name>` so only the post-MVP files run (not e.g.
-	# the clipboard or SIGTSTP integration tests).
+	# Picks the host-appropriate source test. Both files are
+	# `#[ignore]`d so the default `make test` skips them.
+	#
+	# Linux: `--features test-binaries,logind` enables the
+	# `logind_helper` binary and compiles `os_events/logind.rs` + its
+	# `zbus` dep tree. Requires a logind-enabled host + `dbus-send` +
+	# `busctl` to drive the signals from outside the helper.
+	#
+	# macOS: `--features test-binaries,iokit` enables the `iokit_helper`
+	# binary and compiles `os_events/macos.rs` + its `objc2` dep tree.
+	# The cases are manual (a human triggers sleep / screen lock); they
+	# print `INSTRUCTION:` lines and wait. GitHub-hosted macOS runners
+	# have no interactive session, so CI skips them.
+	#
+	# `--test <name>` selects only the post-MVP file so neither the
+	# clipboard nor SIGTSTP integration tests run here.
+ifeq ($(UNAME_S),Darwin)
+	# First the automated `os_events::macos` lib unit tests (incl. the
+	# T5.0 clean-shutdown contract test, which registers real observers
+	# and pumps a real CFRunLoop) — they pass without interaction. Then
+	# the manual integration cases that need a human to trigger sleep /
+	# screen lock.
+	$(CARGO) test -p runaire-security --offline --locked --features iokit --lib os_events::macos -- --ignored --test-threads=1
+	$(CARGO) test -p runaire-security --offline --locked --features test-binaries,iokit --test us_052_post_mvp_iokit -- --ignored --test-threads=1
+else
 	$(CARGO) test -p runaire-security --offline --locked --features test-binaries,logind --test us_052_post_mvp_logind -- --ignored --test-threads=1
+endif
 
 fmt:  ## Auto-format the workspace.
 	$(CARGO) fmt --all

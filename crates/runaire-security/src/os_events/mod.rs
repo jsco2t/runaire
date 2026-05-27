@@ -73,6 +73,9 @@ pub mod sigstop;
 #[cfg(all(target_os = "linux", feature = "logind"))]
 pub mod logind;
 
+#[cfg(all(target_os = "macos", feature = "iokit"))]
+pub mod macos;
+
 pub use noop::NoopSource;
 
 #[cfg(unix)]
@@ -80,6 +83,9 @@ pub use sigstop::SigstopSource;
 
 #[cfg(all(target_os = "linux", feature = "logind"))]
 pub use logind::LogindSource;
+
+#[cfg(all(target_os = "macos", feature = "iokit"))]
+pub use macos::IoKitSource;
 
 /// Single-shot closure the controller invokes from `Drop` to ask an
 /// attached [`OsLockEventSource`] to exit its run loop.

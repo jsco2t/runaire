@@ -15,16 +15,22 @@
 //!
 //! ## Crate posture
 //!
-//! - `#![cfg_attr(not(test), forbid(unsafe_code))]` — MVP. The
-//!   post-MVP `IoKitSource` (Phase 5b) will flip this to
-//!   `deny(unsafe_code)` plus a single locally-`#[allow]`ed module.
+//! - `#![cfg_attr(not(test), deny(unsafe_code))]` — the crate is
+//!   `unsafe`-free except for one locally-`#[allow]`ed module,
+//!   [`os_events::macos`] (Phase 5b `IoKitSource`), which makes the
+//!   `IOKit` / `NSWorkspace` FFI calls. This mirrors the pattern
+//!   `runaire-core` reserves for its future `mlock` block: `deny`
+//!   crate-wide, `#[allow(unsafe_code)]` on exactly the one audited
+//!   module. The flip from MVP's `forbid` to `deny` is irreversible
+//!   (design §3.12, Phase 5 risk #6); a `forbid` would make the
+//!   module-level `#[allow]` a hard error.
 //! - No async runtime; the controller is a pure-sync state machine
 //!   driven by `tick(now)` from the frontend's event loop.
 //! - One public error enum (`SecurityError`). No variant ever carries
 //!   secret material; the design's mapping rule is enforced by code
 //!   review (see `error.rs`).
 
-#![cfg_attr(not(test), forbid(unsafe_code))]
+#![cfg_attr(not(test), deny(unsafe_code))]
 #![deny(missing_docs)]
 
 pub mod auto_lock;
@@ -42,6 +48,8 @@ pub use auto_lock::{
 pub use clipboard::{AutoClearGuard, Clipboard};
 pub use clock::{Clock, SystemClock};
 pub use error::SecurityError;
+#[cfg(all(target_os = "macos", feature = "iokit"))]
+pub use os_events::IoKitSource;
 #[cfg(all(target_os = "linux", feature = "logind"))]
 pub use os_events::LogindSource;
 #[cfg(unix)]
